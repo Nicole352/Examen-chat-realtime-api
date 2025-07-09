@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .auth-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .chat-section {
+            margin-top: 20px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #fafafa;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #007bff;
+            background-color: white;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        .disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Chat Test Client</h1>
+        
+        <!-- Sección de Autenticación -->
+        <div class="auth-section">
+            <h2>Autenticación</h2>
+            <div>
+                <h3>Registro</h3>
+                <input type="email" id="registerEmail" placeholder="Email">
+                <input type="password" id="registerPassword" placeholder="Contraseña">
+                <button onclick="register()">Registrar</button>
+            </div>
+            <div>
+                <h3>Login</h3>
+                <input type="email" id="loginEmail" placeholder="Email">
+                <input type="password" id="loginPassword" placeholder="Contraseña">
+                <button onclick="login()">Login</button>
+            </div>
+        </div>
+
+        <!-- Sección de Chat -->
+        <div class="chat-section disabled" id="chatSection">
+            <h2>Chat</h2>
+            <div id="messages"></div>
+            <div>
+                <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." onkeypress="if(event.key==='Enter') sendMessage()">
+                <button onclick="sendMessage()">Enviar</button>
+            </div>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script>
+        let socket;
+        let token = null;
+        let currentUser = null;
+    
+        const API_URL = 'http://localhost:3000';
+        const showStatus = (message, type = 'info') => {
+            const statusEl = document.getElementById('status');
+            statusEl.innerHTML = `<div class="status ${type}">${message}</div>`;
+            setTimeout(() => statusEl.innerHTML = '', 5000);
+        };
+    
+        const enableChat = () => {
+            document.getElementById('chatSection').classList.remove('disabled');
+            connectWebSocket();
+        };
+    
+        const connectWebSocket = () => {
+            socket = io(API_URL);
+    
+            socket.on('connect', () => {
+                console.log('Conectado al servidor WebSocket');
+                socket.emit('authenticate', { token });
+            });
+    
+            socket.on('authenticated', (data) => {
+                showStatus(`Conectado como: ${data.user.email}`, 'success');
+                currentUser = data.user;
+            });
+    
+            socket.on('authentication_error', (data) => {
+                showStatus(`Error de autenticación: ${data.message}`, 'error');
+            });
+    
+            socket.on('newMessage', (message) => {
+                console.log('Nuevo mensaje recibido:', message);
+                displayMessage(message);
+            });
+    
+            socket.on('message_error', (data) => {
+                console.log('Error al enviar mensaje:', data);
+                showStatus(`Error al enviar mensaje: ${data.message}`, 'error');
+            });
+    
+            socket.on('disconnect', () => {
+                showStatus('Desconectado del servidor', 'error');
+            });
+        };
+    
+        const displayMessage = (message) => {
+            const messagesEl = document.getElementById('messages');
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message';
+            const time = new Date(message.createdAt).toLocaleTimeString();
+            messageEl.innerHTML = `
+                <strong>${message.user.email}</strong> <em>${time}</em><br>
+                ${message.text}
+            `;
+            messagesEl.appendChild(messageEl);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        };
+    
+        // FUNCIÓN DE REGISTRO
+        const register = async () => {
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+    
+            try {
+                const response = await fetch(`${API_URL}/api/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+    
+                const data = await response.json();
+    
+                if (data.success) {
+                    showStatus('Usuario registrado exitosamente', 'success');
+                    document.getElementById('registerEmail').value = '';
+                    document.getElementById('registerPassword').value = '';
+                } else {
+                    showStatus(data.message, 'error');
+                }
+            } catch (err) {
+                showStatus('Error en el registro', 'error');
+            }
+        };
+    
+        // FUNCIÓN DE LOGIN
+        const login = async () => {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+    
+            try {
+                const response = await fetch(`${API_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+    
+                const data = await response.json();
+    
+                if (data.success && data.token) {
+                    token = data.token;
+                    showStatus('Login exitoso', 'success');
+                    enableChat();
+                    document.getElementById('loginEmail').value = '';
+                    document.getElementById('loginPassword').value = '';
+                } else {
+                    showStatus(data.message || 'Login fallido', 'error');
+                }
+            } catch (err) {
+                showStatus('Error en el login', 'error');
+            }
+        };
+    
+        // FUNCIÓN PARA ENVIAR MENSAJES
+        const sendMessage = () => {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text || !socket) return;
+            socket.emit('sendMessage', { text });
+            input.value = '';
+        };
+    </script>
